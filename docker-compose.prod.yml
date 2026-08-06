@@ -1,0 +1,46 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: workagentic8/timecamp-backend:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    # .env.production is dedicated to this environment (unlike the old shared
+    # .env), so its own NODE_ENV=production is authoritative — no override needed.
+    env_file: .env.production
+    # Only relevant when .env.production sets HTTPS_ENABLED=true (see main.ts) — mounts
+    # the whole /etc/letsencrypt tree (not just live/<domain>) because
+    # live/*.pem are symlinks into ../../archive/<domain>/, which would
+    # otherwise dangle inside the container.
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    command: sh -c "npm run migration:run && npm run start:prod"
+    healthcheck:
+      # main.ts serves HTTPS-only once HTTPS_ENABLED=true, so the healthcheck
+      # has to follow suit — plain http against an HTTPS-only server just
+      # hangs/fails. --no-check-certificate because the cert's CN is the
+      # public domain, not 127.0.0.1.
+      test:
+        - CMD-SHELL
+        - >-
+          if [ "$$HTTPS_ENABLED" = "true" ]; then
+            wget -qO- --no-check-certificate https://127.0.0.1:${PORT:-3000}/health || exit 1;
+          else
+            wget -qO- http://127.0.0.1:${PORT:-3000}/health || exit 1;
+          fi
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
