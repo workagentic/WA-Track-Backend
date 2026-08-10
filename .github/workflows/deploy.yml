@@ -1,3 +1,4 @@
+#  name of the workflow
 name: WA Track build and deploy
 
 on:
@@ -6,15 +7,21 @@ on:
       - main
 
 env:
-  IMAGE_NAME: timecamp-backend
+  IMAGE_NAME: wa-track
+  DEPLOY_PATH: wa-track
+
+# Main purpose of workflows is job
+# in one workflow there are multiple jobs
+# job executes the steps in sequential manner
 
 jobs:
+  # name of the job
   build-deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # all work will be done in this temporary machine
     environment: production
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # now workflow can access the source code, now ubuntu-latest machine can access code
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -39,6 +46,16 @@ jobs:
       - name: Push Docker image to DockerHub
         run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
 
+      - name: Copy docker-compose file to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          source: "docker-compose.prod.yml"
+          target: "~/${{ env.DEPLOY_PATH }}"
+
       - name: Deploy to VPS server
         uses: appleboy/ssh-action@v1
         with:
@@ -47,7 +64,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
           script: |
-            cd ${{ secrets.VPS_DEPLOY_PATH }}
+            cd ~/${{ env.DEPLOY_PATH }}
             docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d
+            docker compose -f docker-compose.prod.yml up -d --force-recreate
             docker image prune -f

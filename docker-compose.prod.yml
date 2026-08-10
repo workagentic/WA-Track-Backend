@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: workagentic8/timecamp-backend:${TAG:-latest}
+    image: workagentic8/wa-track:${TAG:-latest}
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
