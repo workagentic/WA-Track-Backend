@@ -5,7 +5,7 @@ COPY package*.json .npmrc ./
 # builder/runner stages' separate `npm ci` calls below) even though the
 # layer cache itself gets invalidated by lockfile changes - avoids
 # re-fetching the same packages from scratch every time on a slow link.
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN --mount=type=cache,target=/root/.npm,id=npm-builder npm ci
 
 COPY . .
 RUN npm run build
@@ -17,7 +17,7 @@ COPY package*.json .npmrc ./
 # src/database/migrations/*.ts, so ts-node/typescript/tsconfig-paths must be present at
 # runtime. --include=dev makes that explicit regardless of NODE_ENV - npm otherwise
 # treats NODE_ENV=production as an implicit --omit=dev and silently skips them.
-RUN --mount=type=cache,target=/root/.npm npm ci --include=dev
+RUN --mount=type=cache,target=/root/.npm,id=npm-runner npm ci --include=dev
 # Set only after the install, so it governs the app's runtime behavior
 # without affecting what npm ci decides to install above.
 ENV NODE_ENV=production
