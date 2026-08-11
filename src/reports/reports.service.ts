@@ -1,23 +1,35 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as ExcelJS from 'exceljs';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { TimeEntry } from '../time-entries/time-entry.entity';
+import { Employee } from '../employees/employee.entity';
 import { ExportReportQueryDto } from './dto/export-report-query.dto';
-import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { DECIMAL_REPORT_FORMAT } from './constant/report-format.constant';
+import { enumerateDateKeys } from './utils/report-date.util';
+import { buildPivot } from './utils/report-pivot.util';
+import { writeMetaBlock, writePivotTable } from './utils/report-sheet.util';
 
 @Injectable()
 export class ReportsService {
-  constructor(@InjectRepository(TimeEntry) private timeEntriesRepo: Repository<TimeEntry>) {}
+  constructor(
+    @InjectRepository(TimeEntry) private timeEntriesRepo: Repository<TimeEntry>,
+    @InjectRepository(Employee) private employeesRepo: Repository<Employee>,
+  ) {}
 
-  async buildExportWorkbook(query: ExportReportQueryDto, user: AuthenticatedUser): Promise<ExcelJS.Workbook> {
-    let departmentId = query.departmentId;
+  async buildExportWorkbook(query: ExportReportQueryDto): Promise<ExcelJS.Workbook> {
+    const departmentId = query.departmentId;
+    const employeeIds = query.employeeIds;
 
-    if (user.role === 'MANAGER') {
-      if (departmentId && departmentId !== user.departmentId) {
-        throw new ForbiddenException('Managers may only export reports for their own department');
+    let selectedEmployeeNames: string[] = [];
+    if (employeeIds && employeeIds.length > 0) {
+      const found = await this.employeesRepo.findBy({ id: In(employeeIds) });
+      const foundIds = new Set(found.map((e) => e.id));
+      const missing = employeeIds.filter((id) => !foundIds.has(id));
+      if (missing.length > 0) {
+        throw new BadRequestException(`Unknown employee id(s): ${missing.join(', ')}`);
       }
-      departmentId = user.departmentId ?? undefined;
+      selectedEmployeeNames = found.map((e) => e.fullName).sort((a, b) => a.localeCompare(b));
     }
 
     const qb = this.timeEntriesRepo
@@ -30,50 +42,40 @@ export class ReportsService {
     if (departmentId) {
       qb.andWhere('department.id = :departmentId', { departmentId });
     }
-
+    if (employeeIds && employeeIds.length > 0) {
+      qb.andWhere('employee.id IN (:...employeeIds)', { employeeIds });
+    }
     if (query.from) {
       qb.andWhere('entry.startTime >= :from', { from: query.from });
     }
-
     if (query.to) {
       qb.andWhere('entry.startTime <= :to', { to: query.to });
     }
 
     const entries = await qb.getMany();
+    const decimal = query.format === DECIMAL_REPORT_FORMAT;
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'TimeCamp';
+    workbook.creator = 'WA Track';
     workbook.created = new Date();
 
-    const sheet = workbook.addWorksheet('Time Entries');
-    sheet.columns = [
-      { header: 'Employee', key: 'employee', width: 28 },
-      { header: 'Department', key: 'department', width: 20 },
-      { header: 'Task', key: 'task', width: 32 },
-      { header: 'Start', key: 'start', width: 22 },
-      { header: 'End', key: 'end', width: 22 },
-      { header: 'Duration (hrs)', key: 'durationHours', width: 16 },
-      { header: 'Sync Status', key: 'syncStatus', width: 14 },
-    ];
-    sheet.getRow(1).font = { bold: true };
-
-    for (const entry of entries) {
-      sheet.addRow({
-        employee: entry.employee?.fullName ?? '',
-        department: entry.employee?.department?.name ?? '',
-        task: entry.task?.title ?? '',
-        start: entry.startTime,
-        end: entry.endTime ?? '',
-        durationHours: Number((entry.durationSeconds / 3600).toFixed(2)),
-        syncStatus: entry.syncStatus,
-      });
+    let peopleLabel = 'All';
+    if (selectedEmployeeNames.length > 0) {
+      peopleLabel = selectedEmployeeNames.join(', ');
+    } else if (departmentId) {
+      peopleLabel = entries[0]?.employee?.department?.name ?? `Department #${departmentId}`;
     }
 
-    const totalRow = sheet.addRow({
-      employee: 'TOTAL',
-      durationHours: Number((entries.reduce((sum, e) => sum + e.durationSeconds, 0) / 3600).toFixed(2)),
-    });
-    totalRow.font = { bold: true };
+    const dateKeys = enumerateDateKeys(query.from, query.to, entries);
+    const employeeGroups = buildPivot(entries);
+
+    const sheet = workbook.addWorksheet(decimal ? 'Time Report (decimal)' : 'Time Report');
+
+    const tableStartRow = decimal
+      ? 1
+      : writeMetaBlock(sheet, { from: query.from, to: query.to, peopleLabel }) + 2;
+
+    writePivotTable(sheet, tableStartRow, dateKeys, employeeGroups, decimal);
 
     return workbook;
   }

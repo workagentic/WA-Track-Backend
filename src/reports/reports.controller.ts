@@ -4,10 +4,9 @@ import { ApiBearerAuth, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagg
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { ReportsService } from './reports.service';
 import { ExportReportQueryDto } from './dto/export-report-query.dto';
+import { DECIMAL_REPORT_FORMAT } from './constant/report-format.constant';
 
 @ApiTags('reports')
 @ApiBearerAuth()
@@ -17,17 +16,18 @@ export class ReportsController {
   constructor(private reportsService: ReportsService) {}
 
   @Get('export')
-  @Roles('HR', 'ADMIN', 'MANAGER')
+  @Roles('HR', 'ADMIN')
   @ApiOperation({ summary: 'Streams an .xlsx time-entry report for the given filters' })
   @ApiProduces('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-  async export(
-    @Query() query: ExportReportQueryDto,
-    @CurrentUser() user: AuthenticatedUser,
-    @Res() res: Response,
-  ): Promise<void> {
-    const workbook = await this.reportsService.buildExportWorkbook(query, user);
+  async export(@Query() query: ExportReportQueryDto, @Res() res: Response): Promise<void> {
+    const workbook = await this.reportsService.buildExportWorkbook(query);
+    const rangeLabel = `${query.from ?? 'all'} to ${query.to ?? 'all'}`;
+    const filename =
+      query.format === DECIMAL_REPORT_FORMAT
+        ? `WA Track - Decimal ${rangeLabel}.xlsx`
+        : `WA Track Report ${rangeLabel}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="timecamp-report-${query.from ?? 'all'}-${query.to ?? 'all'}.xlsx"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     await workbook.xlsx.write(res);
     res.end();
   }
