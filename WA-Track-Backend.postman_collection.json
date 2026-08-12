@@ -1,0 +1,736 @@
+{
+  "info": {
+    "_postman_id": "9c7a1e3e-4b2a-4d7f-8f1a-6a1b0c9e2f10",
+    "name": "WA Track Backend API",
+    "description": "Full request collection for the WA Track (formerly TimeCamp) NestJS backend — auth, pairing, employees, departments, clients, tasks, time entries, device sessions, reports, roles, and the deletion audit API.\n\n**Setup**\n1. Run the backend locally (`npm run start:dev`) so it's reachable at `{{base_url}}`.\n2. Run `npm run seed` once against your DB — this creates the four roles and a seeded ADMIN user (`admin_email`/`admin_password`).\n3. Run **Auth > Login** — its test script stores the returned `accessToken` into the `token` collection variable, which every other request inherits via the collection-level Bearer auth.\n\nThis collection intentionally only declares 5 variables (`base_url`, `host`, `token`, `admin_email`, `admin_password`). Every resource id used in a URL or body (employee/department/client/task ids, etc.) is a literal placeholder value — replace it with the real id returned from the matching `Create`/`List` response as you go.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000/api/v1", "type": "string" },
+    { "key": "host", "value": "http://localhost:3000", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "admin_email", "value": "admin@timecamp.local", "type": "string" },
+    { "key": "admin_password", "value": "ChangeMe123!", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Web portal login and access/refresh token rotation. Neither route uses Bearer auth — Login has no auth requirement, and Refresh reads the refresh token from the request body (passport 'jwt-refresh' strategy), not the Authorization header.",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Web portal login. On success, the test script stores the returned `accessToken` into the `token` collection variable used by every other request. The `refreshToken` is also returned in the response body — copy it manually into 'Refresh Token' if you need to test rotation."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json().data;",
+                  "  pm.collectionVariables.set('token', data.accessToken);",
+                  "  console.log('Stored accessToken into the token variable. refreshToken (copy manually if needed):', data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"PASTE_REFRESH_TOKEN_FROM_LOGIN_RESPONSE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/refresh-token",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "refresh-token"]
+            },
+            "description": "Rotates the access/refresh token pair. The refresh token is read from the JSON body, not the Authorization header — paste the `refreshToken` value from a Login response above."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('token', pm.response.json().data.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Pairing (Desktop App device-code flow)",
+      "description": "The desktop app's TV-style device-code pairing flow. 'Create Device Code' and 'Poll Token' are called by the desktop app itself (no login); 'Confirm Pairing' is called by the logged-in web portal user.",
+      "item": [
+        {
+          "name": "Create Device Code",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/pairing/device-code",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "pairing", "device-code"]
+            },
+            "description": "Called by the desktop app on launch. Returns { deviceCode, userCode, expiresAt, pollIntervalSeconds } — copy userCode into 'Confirm Pairing' and deviceCode into 'Poll Token'."
+          }
+        },
+        {
+          "name": "Confirm Pairing (Web Portal)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userCode\": \"PASTE_USER_CODE_FROM_DEVICE_CODE_RESPONSE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/pairing/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "pairing", "confirm"]
+            },
+            "description": "Requires Bearer auth (logged-in web portal user). Links the userCode from 'Create Device Code' to the current employee."
+          }
+        },
+        {
+          "name": "Poll Token (Desktop App)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceCode\": \"PASTE_DEVICE_CODE_FROM_DEVICE_CODE_RESPONSE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/pairing/token",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "pairing", "token"]
+            },
+            "description": "Called repeatedly by the desktop app until 'Confirm Pairing' has been run. Returns 428 (authorization_pending) until then, then 201 with a device access/refresh token pair."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Employees",
+      "description": "Replace the literal '1' ids below with real ids from your database (see List Employees / List Roles / List Departments). roleId reference from the seed script's insertion order: 1=EMPLOYEE, 2=MANAGER, 3=HR, 4=ADMIN — confirm against GET /roles rather than assuming.",
+      "item": [
+        {
+          "name": "List Employees",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/employees?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["employees"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "MANAGER sees only their own department; HR/ADMIN see everyone. Soft-deleted employees are excluded automatically. Offset-based pagination — response is { data: [...], total, page, limit, totalPages }."
+          }
+        },
+        {
+          "name": "Create Employee",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Jane Doe\",\n  \"email\": \"jane.doe@company.com\",\n  \"username\": \"jane.doe\",\n  \"password\": \"StrongPassw0rd!\",\n  \"departmentId\": 1,\n  \"roleId\": 1,\n  \"status\": \"active\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/employees", "host": ["{{base_url}}"], "path": ["employees"] },
+            "description": "Requires HR or ADMIN. `username` is set once here and can never be changed afterward (omitted from the update DTO)."
+          }
+        },
+        {
+          "name": "Update Employee",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Jane A. Doe\",\n  \"status\": \"active\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/employees/1",
+              "host": ["{{base_url}}"],
+              "path": ["employees", "1"]
+            },
+            "description": "Requires HR, ADMIN, or MANAGER (own department). `password` and `username` are rejected here (400) — use the dedicated password endpoint; username is immutable."
+          }
+        },
+        {
+          "name": "Change Employee Password",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"NewStrongPassw0rd!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/employees/1/password",
+              "host": ["{{base_url}}"],
+              "path": ["employees", "1", "password"]
+            },
+            "description": "Requires HR or ADMIN."
+          }
+        },
+        {
+          "name": "Soft Delete Employee",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/employees/1",
+              "host": ["{{base_url}}"],
+              "path": ["employees", "1"]
+            },
+            "description": "Requires HR or ADMIN. Sets deletedAt/deletedBy — the employee's Tasks/TimeEntries/Clients are left untouched."
+          }
+        },
+        {
+          "name": "Restore Employee",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/employees/1/restore",
+              "host": ["{{base_url}}"],
+              "path": ["employees", "1", "restore"]
+            },
+            "description": "Requires HR or ADMIN."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Departments",
+      "item": [
+        {
+          "name": "List Departments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/departments?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["departments"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Offset-based pagination — response is { data: [...], total, page, limit, totalPages }."
+          }
+        },
+        {
+          "name": "Create Department",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Engineering\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/departments", "host": ["{{base_url}}"], "path": ["departments"] },
+            "description": "Requires HR or ADMIN."
+          }
+        },
+        {
+          "name": "Update Department",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Engineering & Platform\",\n  \"headEmployeeId\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/departments/1",
+              "host": ["{{base_url}}"],
+              "path": ["departments", "1"]
+            },
+            "description": "Requires HR or ADMIN."
+          }
+        },
+        {
+          "name": "Soft Delete Department",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/departments/1?force=false",
+              "host": ["{{base_url}}"],
+              "path": ["departments", "1"],
+              "query": [{ "key": "force", "value": "false" }]
+            },
+            "description": "Requires HR or ADMIN. Returns 409 if the department has active (non-deleted) Clients — pass force=true to also soft-delete them."
+          }
+        },
+        {
+          "name": "Soft Delete Department (force cascade)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/departments/1?force=true",
+              "host": ["{{base_url}}"],
+              "path": ["departments", "1"],
+              "query": [{ "key": "force", "value": "true" }]
+            },
+            "description": "Requires HR or ADMIN. Also soft-deletes every active Client in this department (never TimeEntry)."
+          }
+        },
+        {
+          "name": "Restore Department",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/departments/1/restore",
+              "host": ["{{base_url}}"],
+              "path": ["departments", "1", "restore"]
+            },
+            "description": "Requires HR or ADMIN."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Clients",
+      "item": [
+        {
+          "name": "List Clients",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/clients?withDeleted=false&page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["clients"],
+              "query": [
+                { "key": "withDeleted", "value": "false" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "MANAGER sees only their own department's clients. Set withDeleted=true to include soft-deleted rows. Offset-based pagination — response is { data: [...], total, page, limit, totalPages }."
+          }
+        },
+        {
+          "name": "Get Client By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/clients/1",
+              "host": ["{{base_url}}"],
+              "path": ["clients", "1"]
+            }
+          }
+        },
+        {
+          "name": "Create Client",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ABC Company\",\n  \"description\": \"Retail client, EU region\",\n  \"departmentId\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/clients", "host": ["{{base_url}}"], "path": ["clients"] },
+            "description": "Requires HR, MANAGER (own department only), or ADMIN."
+          }
+        },
+        {
+          "name": "Update Client",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ABC Company Ltd\",\n  \"description\": \"Retail client, EU + UK region\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/clients/1",
+              "host": ["{{base_url}}"],
+              "path": ["clients", "1"]
+            },
+            "description": "Requires HR, MANAGER (own department only), or ADMIN. departmentId is fixed at creation and cannot be changed here."
+          }
+        },
+        {
+          "name": "Soft Delete Client",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/clients/1?force=false",
+              "host": ["{{base_url}}"],
+              "path": ["clients", "1"],
+              "query": [{ "key": "force", "value": "false" }]
+            },
+            "description": "Requires HR or ADMIN. Returns 409 if the client has active (non-deleted) Tasks — pass force=true to also soft-delete them."
+          }
+        },
+        {
+          "name": "Soft Delete Client (force cascade)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/clients/1?force=true",
+              "host": ["{{base_url}}"],
+              "path": ["clients", "1"],
+              "query": [{ "key": "force", "value": "true" }]
+            },
+            "description": "Requires HR or ADMIN. Also soft-deletes every active Task under this client (never TimeEntry)."
+          }
+        },
+        {
+          "name": "Restore Client",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/clients/1/restore",
+              "host": ["{{base_url}}"],
+              "path": ["clients", "1", "restore"]
+            },
+            "description": "Requires HR or ADMIN."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tasks",
+      "item": [
+        {
+          "name": "List Tasks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/tasks?departmentId=1&page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["tasks"],
+              "query": [
+                { "key": "departmentId", "value": "1" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "MANAGER is scoped to their own department; EMPLOYEE sees only tasks assigned to them. Each task includes totalDurationSeconds (summed from its TimeEntries). Offset-based pagination — response is { data: [...], total, page, limit, totalPages }."
+          }
+        },
+        {
+          "name": "Create Task",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Build Authentication API\",\n  \"description\": \"OAuth2 + refresh tokens\",\n  \"departmentId\": 1,\n  \"assignedToId\": 1,\n  \"clientId\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/tasks", "host": ["{{base_url}}"], "path": ["tasks"] },
+            "description": "Requires HR, MANAGER (own department only), or ADMIN. clientId is required — there is no more status field."
+          }
+        },
+        {
+          "name": "Update Task",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Build Authentication API v2\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/tasks/1",
+              "host": ["{{base_url}}"],
+              "path": ["tasks", "1"]
+            },
+            "description": "Requires HR, MANAGER (own department only), or ADMIN. clientId is not accepted here — use 'Assign Client to Task' for a clear audit point."
+          }
+        },
+        {
+          "name": "Assign Client to Task",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/tasks/1/assign-client",
+              "host": ["{{base_url}}"],
+              "path": ["tasks", "1", "assign-client"]
+            },
+            "description": "Requires HR, MANAGER (task's and client's department must both match the manager's), or ADMIN."
+          }
+        },
+        {
+          "name": "Soft Delete Task",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/tasks/1",
+              "host": ["{{base_url}}"],
+              "path": ["tasks", "1"]
+            },
+            "description": "Requires HR or ADMIN. Its TimeEntries are left untouched."
+          }
+        },
+        {
+          "name": "Restore Task",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/tasks/1/restore",
+              "host": ["{{base_url}}"],
+              "path": ["tasks", "1", "restore"]
+            },
+            "description": "Requires HR or ADMIN."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Time Entries",
+      "item": [
+        {
+          "name": "Sync Time Entries",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entries\": [\n    {\n      \"localId\": \"{{$guid}}\",\n      \"taskId\": 1,\n      \"employeeId\": 1,\n      \"startTime\": \"2026-08-12T09:00:00.000Z\",\n      \"endTime\": \"2026-08-12T13:00:00.000Z\",\n      \"durationSeconds\": 14400,\n      \"syncStatus\": \"synced\"\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/time-entries/sync",
+              "host": ["{{base_url}}"],
+              "path": ["time-entries", "sync"]
+            },
+            "description": "Upserts by localId — this is how the desktop app's offline SQLite cache reconciles with the server. {{$guid}} auto-generates a fresh localId each run."
+          }
+        },
+        {
+          "name": "List Time Entries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/time-entries?employeeId=1&taskId=1&from=2026-07-01&to=2026-07-31&page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["time-entries"],
+              "query": [
+                { "key": "employeeId", "value": "1" },
+                { "key": "taskId", "value": "1" },
+                { "key": "from", "value": "2026-07-01" },
+                { "key": "to", "value": "2026-07-31" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Offset-based pagination — response is { data: [...], total, page, limit, totalPages }."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Device Sessions",
+      "item": [
+        {
+          "name": "List My Device Sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/device-sessions?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["device-sessions"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Offset-based pagination — response is { data: [...], total, page, limit, totalPages }."
+          }
+        },
+        {
+          "name": "Revoke Device Session",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/device-sessions/1",
+              "host": ["{{base_url}}"],
+              "path": ["device-sessions", "1"]
+            },
+            "description": "A user may only revoke their own device sessions."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reports",
+      "item": [
+        {
+          "name": "Export Time Entry Report (.xlsx)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/reports/export?from=2026-07-01&to=2026-07-31&departmentId=1&employeeIds=1,2,3&format=formatted",
+              "host": ["{{base_url}}"],
+              "path": ["reports", "export"],
+              "query": [
+                { "key": "from", "value": "2026-07-01" },
+                { "key": "to", "value": "2026-07-31" },
+                { "key": "departmentId", "value": "1" },
+                {
+                  "key": "employeeIds",
+                  "value": "1,2,3",
+                  "description": "Comma-separated employee ids to restrict the report to. Omit this param entirely for all employees."
+                },
+                { "key": "format", "value": "formatted", "description": "'formatted' or 'decimal'" }
+              ]
+            },
+            "description": "Requires HR or ADMIN. Streams a binary .xlsx file — in Postman, use 'Send and Download' to save the response instead of viewing it as text."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Roles",
+      "item": [
+        {
+          "name": "List Roles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/roles?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["roles"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Use this to look up the real roleId values (EMPLOYEE/MANAGER/HR/ADMIN) instead of assuming. Offset-based pagination — response is { data: [...], total, page, limit, totalPages }."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Audit",
+      "description": "HR/ADMIN-only cross-entity view of every soft-deleted Employee/Department/Client/Task, with who deleted it and when.",
+      "item": [
+        {
+          "name": "List Deletions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/deletions?entityType=client&page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "deletions"],
+              "query": [
+                { "key": "entityType", "value": "client", "description": "employee | department | client | task" },
+                { "key": "deletedById", "value": "1", "disabled": true },
+                { "key": "from", "value": "2026-01-01", "disabled": true },
+                { "key": "to", "value": "2026-12-31", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Requires HR or ADMIN. Omit entityType to see deletions across all four entities, sorted newest-first. Offset-based pagination — response is { data: [...], total, page, limit, totalPages }."
+          }
+        },
+        {
+          "name": "Get Deletion Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/deletions/client/1",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "deletions", "client", "1"]
+            },
+            "description": "Requires HR or ADMIN. 404 if that entity/id has no deletion record (i.e. it isn't currently soft-deleted)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{host}}/health", "host": ["{{host}}"], "path": ["health"] },
+            "description": "Not behind the /api/v1 prefix — used by load balancers / Docker healthchecks."
+          }
+        }
+      ]
+    }
+  ]
+}
