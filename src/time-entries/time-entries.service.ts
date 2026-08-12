@@ -5,6 +5,8 @@ import { TimeEntry } from './time-entry.entity';
 import { SyncTimeEntriesDto } from './dto/sync-time-entries.dto';
 import { QueryTimeEntriesDto } from './dto/query-time-entries.dto';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { PaginatedResult } from '../common/interfaces/paginated-result.interface';
+import { buildPaginatedResult } from '../common/utils/paginate.util';
 
 @Injectable()
 export class TimeEntriesService {
@@ -43,7 +45,10 @@ export class TimeEntriesService {
     return saved;
   }
 
-  public findAll(query: QueryTimeEntriesDto, user: AuthenticatedUser): Promise<TimeEntry[]> {
+  public async findAll(query: QueryTimeEntriesDto, user: AuthenticatedUser): Promise<PaginatedResult<TimeEntry>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
     const qb = this.timeEntriesRepo
       .createQueryBuilder('entry')
       .leftJoinAndSelect('entry.employee', 'employee')
@@ -71,6 +76,11 @@ export class TimeEntriesService {
       qb.andWhere('entry.startTime <= :to', { to: query.to });
     }
 
-    return qb.orderBy('entry.startTime', 'DESC').getMany();
+    qb.orderBy('entry.startTime', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [data, total] = await qb.getManyAndCount();
+    return buildPaginatedResult(data, total, page, limit);
   }
 }

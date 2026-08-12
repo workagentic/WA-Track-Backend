@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 
 // Read directly from process.env, not ConfigService — NestFactory.create()
 // needs httpsOptions before an app (and therefore a ConfigService) exists.
@@ -49,11 +50,17 @@ async function bootstrap() {
 
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  // Strips @Exclude()-marked fields (e.g. Employee.passwordHash) from every
-  // response — necessary because several routes return TypeORM entities
-  // directly, including nested employee objects inside tasks/time-entries/
-  // device-sessions, rather than always going through a response DTO.
-  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
+  // Order matters: global interceptors apply their post-handler transform in
+  // REVERSE registration order (the last one registered sees the raw handler
+  // output first). ClassSerializerInterceptor must strip @Exclude()-marked
+  // fields (e.g. Employee.passwordHash) from the raw entity BEFORE
+  // ResponseInterceptor wraps it into { statusCode, message, data } —
+  // otherwise passwordHash would be nested inside `data` where
+  // ClassSerializerInterceptor no longer recognizes it as a class instance.
+  app.useGlobalInterceptors(
+    new ResponseInterceptor(app.get(Reflector)),
+    new ClassSerializerInterceptor(app.get(Reflector)),
+  );
 
   if (config.get<boolean>('SWAGGER_ENABLED', true)) {
     const swaggerConfig = new DocumentBuilder()

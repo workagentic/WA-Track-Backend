@@ -2,6 +2,7 @@ import { Exclude } from 'class-transformer';
 import {
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   JoinColumn,
   ManyToOne,
@@ -22,8 +23,11 @@ export class Employee {
   @Column()
   fullName!: string;
 
-  @Column({ unique: true })
+  @Column()
   email!: string;
+
+  @Column()
+  username!: string;
 
   // Many routes return this entity directly (not through a DTO), including
   // nested inside tasks/time-entries/device-sessions responses — @Exclude()
@@ -61,4 +65,10 @@ export class Employee {
 
   @CreateDateColumn()
   createdAt!: Date;
+
+  @DeleteDateColumn()
+  deletedAt!: Date | null;
+
+  @ManyToOne(() => Employee, { nullable: true })
+  deletedBy!: Employee | null;
 }

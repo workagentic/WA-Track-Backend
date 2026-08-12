@@ -33,6 +33,7 @@ async function seed() {
   }
 
   const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'admin@timecamp.local';
+  const adminUsername = process.env.SEED_ADMIN_USERNAME ?? 'admin';
   const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? 'ChangeMe123!';
 
   const existingAdmin = await employeeRepo.findOne({ where: { email: adminEmail } });
@@ -43,6 +44,7 @@ async function seed() {
       employeeRepo.create({
         fullName: 'System Admin',
         email: adminEmail,
+        username: adminUsername,
         passwordHash,
         status: 'active',
         department,
