@@ -1,28 +1,35 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TimeEntry } from './time-entry.entity';
 import { SyncTimeEntriesDto } from './dto/sync-time-entries.dto';
 import { QueryTimeEntriesDto } from './dto/query-time-entries.dto';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { PaginatedResult } from '../common/interfaces/paginated-result.interface';
+import { buildPaginatedResult } from '../common/utils/paginate.util';
 
 @Injectable()
 export class TimeEntriesService {
   constructor(@InjectRepository(TimeEntry) private timeEntriesRepo: Repository<TimeEntry>) {}
 
-  /** Upserts by localId so retried/batched syncs from the desktop app never create duplicates. */
+  /**
+   * Upserts by localId so retried/batched syncs from the desktop app never
+   * create duplicates. Each entry is validated/saved independently rather
+   * than all-or-nothing: the desktop app sends every pending entry in one
+   * batch, and on a shared machine that batch can contain a leftover entry
+   * from a previous employee's session — rejecting the whole request over
+   * one foreign entry would permanently block every other (legitimately
+   * owned) entry in the same batch from ever syncing.
+   */
   public async sync(dto: SyncTimeEntriesDto, user: AuthenticatedUser): Promise<TimeEntry[]> {
     const isSelfOnly = user.role === 'EMPLOYEE' || user.role === 'MANAGER';
-
-    for (const item of dto.entries) {
-      if (isSelfOnly && item.employeeId !== user.sub) {
-        throw new ForbiddenException('Cannot sync time entries on behalf of another employee');
-      }
-    }
-
     const saved: TimeEntry[] = [];
 
     for (const item of dto.entries) {
+      if (isSelfOnly && item.employeeId !== user.sub) {
+        continue;
+      }
+
       let entry = await this.timeEntriesRepo.findOne({ where: { localId: item.localId } });
 
       if (!entry) {
@@ -43,7 +50,10 @@ export class TimeEntriesService {
     return saved;
   }
 
-  public findAll(query: QueryTimeEntriesDto, user: AuthenticatedUser): Promise<TimeEntry[]> {
+  public async findAll(query: QueryTimeEntriesDto, user: AuthenticatedUser): Promise<PaginatedResult<TimeEntry>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
     const qb = this.timeEntriesRepo
       .createQueryBuilder('entry')
       .leftJoinAndSelect('entry.employee', 'employee')
@@ -71,6 +81,11 @@ export class TimeEntriesService {
       qb.andWhere('entry.startTime <= :to', { to: query.to });
     }
 
-    return qb.orderBy('entry.startTime', 'DESC').getMany();
+    qb.orderBy('entry.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [data, total] = await qb.getManyAndCount();
+    return buildPaginatedResult(data, total, page, limit);
   }
 }

@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { ResponseMessage } from '../common/decorators/response-message.decorator';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { PairingService } from './pairing.service';
 import { ConfirmPairingDto } from './dto/confirm-pairing.dto';
@@ -18,6 +19,7 @@ export class PairingController {
   @HttpCode(HttpStatus.CREATED) // a new PairingCode row is created
   @ApiOperation({ summary: 'Called by the desktop app on launch to start the pairing flow' })
   @ApiResponse({ status: HttpStatus.CREATED, type: PairingDeviceCodeResponseDto })
+  @ResponseMessage('Device code generated successfully')
   public createDeviceCode(): Promise<PairingDeviceCodeResponseDto> {
     return this.pairingService.createDeviceCode();
   }
@@ -31,12 +33,9 @@ export class PairingController {
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Unknown or already-used pairing code' })
   @ApiResponse({ status: HttpStatus.CONFLICT, description: 'Code already confirmed' })
   @ApiResponse({ status: HttpStatus.GONE, description: 'expired' })
-  public async confirm(
-    @Body() dto: ConfirmPairingDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<{ success: true }> {
+  @ResponseMessage('Device paired successfully')
+  public async confirm(@Body() dto: ConfirmPairingDto, @CurrentUser() user: AuthenticatedUser): Promise<void> {
     await this.pairingService.confirm(dto.userCode, user.sub);
-    return { success: true };
   }
 
   @Post('token')
@@ -46,6 +45,7 @@ export class PairingController {
   @ApiResponse({ status: HttpStatus.PRECONDITION_REQUIRED, description: 'authorization_pending' })
   @ApiResponse({ status: HttpStatus.TOO_MANY_REQUESTS, description: 'slow_down' })
   @ApiResponse({ status: HttpStatus.GONE, description: 'expired' })
+  @ResponseMessage('Device token issued successfully')
   public poll(@Body() dto: PollTokenDto): Promise<PairingTokenResponseDto> {
     return this.pairingService.poll(dto.deviceCode);
   }

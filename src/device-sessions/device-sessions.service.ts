@@ -1,35 +1,38 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DeviceSession } from './device-session.entity';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { PaginatedResult } from '../common/interfaces/paginated-result.interface';
+import { buildPaginatedResult } from '../common/utils/paginate.util';
 
 @Injectable()
 export class DeviceSessionsService {
   constructor(@InjectRepository(DeviceSession) private deviceSessionsRepo: Repository<DeviceSession>) {}
 
-  public findMine(user: AuthenticatedUser): Promise<DeviceSession[]> {
-    return this.deviceSessionsRepo.find({
-      where: { employee: { id: user.sub } },
-      order: { lastActive: 'DESC' },
-    });
-  }
+  // HR/ADMIN manage devices org-wide (hence the employee relation, so they
+  // can tell whose device they're looking at); EMPLOYEE/MANAGER only ever
+  // see their own paired devices, read-only.
+  public async findAll(user: AuthenticatedUser, page = 1, limit = 20): Promise<PaginatedResult<DeviceSession>> {
+    const qb = this.deviceSessionsRepo
+      .createQueryBuilder('device')
+      .leftJoinAndSelect('device.employee', 'employee')
+      .orderBy('device.createdAt', 'DESC');
 
-  public async revoke(id: number, user: AuthenticatedUser): Promise<void> {
-    const session = await this.deviceSessionsRepo.findOne({
-      where: { id },
-      relations: { employee: true },
-    });
-
-    if (!session) {
-      throw new NotFoundException(`Device session ${id} not found`);
+    if (user.role !== 'HR' && user.role !== 'ADMIN') {
+      qb.andWhere('employee.id = :employeeId', { employeeId: user.sub });
     }
 
-    const isOwner = session.employee?.id === user.sub;
-    const isAdmin = user.role === 'HR' || user.role === 'ADMIN';
+    qb.skip((page - 1) * limit).take(limit);
 
-    if (!isOwner && !isAdmin) {
-      throw new ForbiddenException('You may only revoke your own devices');
+    const [data, total] = await qb.getManyAndCount();
+    return buildPaginatedResult(data, total, page, limit);
+  }
+
+  public async revoke(id: number): Promise<void> {
+    const session = await this.deviceSessionsRepo.findOne({ where: { id } });
+    if (!session) {
+      throw new NotFoundException(`Device session ${id} not found`);
     }
 
     session.isActive = false;

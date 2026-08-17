@@ -1,4 +1,4 @@
-import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { Employee } from '../employees/employee.entity';
 
 @Entity('pairing_codes')
@@ -29,4 +29,10 @@ export class PairingCode {
 
   @Column({ nullable: true })
   deviceSessionId!: number;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
 }

@@ -2,11 +2,15 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Task } from './task.entity';
+import { Client } from '../clients/client.entity';
 import { TimeEntry } from '../time-entries/time-entry.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { QueryTasksDto } from './dto/query-tasks.dto';
+import { AssignClientDto } from './dto/assign-client.dto';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { PaginatedResult } from '../common/interfaces/paginated-result.interface';
+import { buildPaginatedResult } from '../common/utils/paginate.util';
 
 export type TaskWithDuration = Task & { totalDurationSeconds: number };
 
@@ -15,28 +19,40 @@ export class TasksService {
   constructor(
     @InjectRepository(Task) private tasksRepo: Repository<Task>,
     @InjectRepository(TimeEntry) private timeEntriesRepo: Repository<TimeEntry>,
+    @InjectRepository(Client) private clientsRepo: Repository<Client>,
   ) {}
 
-  public async findAll(query: QueryTasksDto, user: AuthenticatedUser): Promise<TaskWithDuration[]> {
+  public async findAll(
+    query: QueryTasksDto,
+    user: AuthenticatedUser,
+  ): Promise<PaginatedResult<TaskWithDuration>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
     const qb = this.tasksRepo
       .createQueryBuilder('task')
       .leftJoinAndSelect('task.department', 'department')
-      .leftJoinAndSelect('task.assignedTo', 'assignedTo')
-      .leftJoinAndSelect('task.createdBy', 'createdBy');
+      .leftJoinAndSelect('task.createdBy', 'createdBy')
+      .leftJoinAndSelect('task.client', 'client');
 
-    if (user.role === 'MANAGER') {
+    if (query.withDeleted === 'true') {
+      qb.withDeleted();
+    }
+
+    if (user.role === 'MANAGER' || user.role === 'EMPLOYEE') {
       qb.andWhere('department.id = :departmentId', { departmentId: user.departmentId });
     } else if (query.departmentId) {
       qb.andWhere('department.id = :departmentId', { departmentId: query.departmentId });
     }
 
-    if (user.role === 'EMPLOYEE') {
-      qb.andWhere('assignedTo.id = :employeeId', { employeeId: user.sub });
-    }
+    qb.orderBy('task.createdAt', 'DESC');
+    qb.skip((page - 1) * limit).take(limit);
 
-    const tasks = await qb.getMany();
+    const [tasks, total] = await qb.getManyAndCount();
     const totals = await this.durationTotalsByTaskId(tasks.map((t) => t.id));
-    return tasks.map((task) => ({ ...task, totalDurationSeconds: totals.get(task.id) ?? 0 }));
+    const data = tasks.map((task) => ({ ...task, totalDurationSeconds: totals.get(task.id) ?? 0 }));
+
+    return buildPaginatedResult(data, total, page, limit);
   }
 
   private async durationTotalsByTaskId(taskIds: number[]): Promise<Map<number, number>> {
@@ -57,7 +73,7 @@ export class TasksService {
   public async findById(id: number): Promise<Task> {
     const task = await this.tasksRepo.findOne({
       where: { id },
-      relations: { department: true, assignedTo: true, createdBy: true },
+      relations: { department: true, createdBy: true, client: true },
     });
     if (!task) {
       throw new NotFoundException(`Task ${id} not found`);
@@ -73,10 +89,9 @@ export class TasksService {
     const task = this.tasksRepo.create({
       title: dto.title,
       description: dto.description,
-      dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
       department: { id: dto.departmentId } as any,
-      assignedTo: { id: dto.assignedToId } as any,
       createdBy: { id: user.sub } as any,
+      client: { id: dto.clientId } as any,
     });
 
     return this.tasksRepo.save(task);
@@ -91,11 +106,57 @@ export class TasksService {
 
     if (dto.title !== undefined) task.title = dto.title;
     if (dto.description !== undefined) task.description = dto.description;
-    if (dto.status !== undefined) task.status = dto.status;
-    if (dto.dueDate !== undefined) task.dueDate = new Date(dto.dueDate);
     if (dto.departmentId !== undefined) task.department = { id: dto.departmentId } as any;
-    if (dto.assignedToId !== undefined) task.assignedTo = { id: dto.assignedToId } as any;
 
     return this.tasksRepo.save(task);
+  }
+
+  public async assignClient(id: number, dto: AssignClientDto, user: AuthenticatedUser): Promise<Task> {
+    const task = await this.findById(id);
+
+    if (user.role === 'MANAGER' && task.department?.id !== user.departmentId) {
+      throw new ForbiddenException('Managers may only reassign tasks within their own department');
+    }
+
+    const client = await this.clientsRepo.findOne({
+      where: { id: dto.clientId },
+      relations: { department: true },
+    });
+    if (!client) {
+      throw new NotFoundException(`Client ${dto.clientId} not found`);
+    }
+    if (user.role === 'MANAGER' && client.department?.id !== user.departmentId) {
+      throw new ForbiddenException('Managers may only assign clients within their own department');
+    }
+
+    task.client = client;
+    return this.tasksRepo.save(task);
+  }
+
+  public async softDelete(id: number, user: AuthenticatedUser): Promise<void> {
+    const task = await this.findById(id);
+
+    if (user.role === 'MANAGER' && task.department?.id !== user.departmentId) {
+      throw new ForbiddenException('Managers may only delete tasks within their own department');
+    }
+
+    await this.tasksRepo.update(id, { deletedAt: new Date(), deletedBy: { id: user.sub } as any });
+  }
+
+  public async restore(id: number, user: AuthenticatedUser): Promise<Task> {
+    const task = await this.tasksRepo.findOne({
+      where: { id },
+      withDeleted: true,
+      relations: { department: true },
+    });
+    if (!task) {
+      throw new NotFoundException(`Task ${id} not found`);
+    }
+    if (user.role === 'MANAGER' && task.department?.id !== user.departmentId) {
+      throw new ForbiddenException('Managers may only restore tasks within their own department');
+    }
+
+    await this.tasksRepo.update(id, { deletedAt: null, deletedBy: null });
+    return this.findById(id);
   }
 }

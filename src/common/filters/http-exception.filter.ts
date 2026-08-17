@@ -4,9 +4,13 @@ import { Request, Response } from 'express';
 /**
  * Catches everything (not just HttpException) so an unexpected error (a bug,
  * a DB hiccup) gets the same envelope as a deliberate 4xx instead of
- * Nest's bare default 500 page. Stack traces are only ever attached in
- * development - in production they'd hand API clients file paths and
- * internal implementation details for free.
+ * Nest's bare default 500 page.
+ *
+ * Production responses are deliberately minimal — statusCode + message +
+ * data:null, matching the success envelope shape from ResponseInterceptor —
+ * so a client never sees a stack trace, request path, or other internal
+ * detail. Non-production responses add path/timestamp/stack for local
+ * debugging.
  */
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -28,21 +32,26 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     const body = isHttpException ? exception.getResponse() : null;
-    const responsePayload = isHttpException
+    const message = isHttpException
       ? typeof body === 'string'
-        ? { message: body }
-        : body
-      : { message: 'Internal server error' };
+        ? body
+        : ((body as { message?: string | string[] })?.message ?? exception.message)
+      : 'Internal server error';
 
     const isProduction = process.env.NODE_ENV === 'production';
-    const stack = !isProduction && exception instanceof Error ? exception.stack : undefined;
+
+    if (isProduction) {
+      response.status(status).json({ statusCode: status, message, data: null });
+      return;
+    }
 
     response.status(status).json({
       statusCode: status,
+      message,
+      data: null,
       path: request.url,
       timestamp: new Date().toISOString(),
-      ...responsePayload,
-      ...(stack ? { stack } : {}),
+      stack: exception instanceof Error ? exception.stack : undefined,
     });
   }
 }

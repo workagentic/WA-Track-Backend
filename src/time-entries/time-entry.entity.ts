@@ -1,4 +1,4 @@
-import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { Employee } from '../employees/employee.entity';
 import { Task } from '../tasks/task.entity';
 
@@ -30,4 +30,10 @@ export class TimeEntry {
 
   @Column({ unique: true })
   localId!: string;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
 }

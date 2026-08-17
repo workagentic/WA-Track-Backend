@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsInt, IsOptional, IsString } from 'class-validator';
 
 export class CreateTaskDto {
   @ApiProperty({ example: 'Migrate billing service to v2' })
@@ -17,10 +17,5 @@ export class CreateTaskDto {
 
   @ApiProperty()
   @IsInt()
-  assignedToId: number;
-
-  @ApiPropertyOptional({ example: '2026-08-15' })
-  @IsOptional()
-  @IsDateString()
-  dueDate?: string;
+  clientId: number;
 }
