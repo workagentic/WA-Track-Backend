@@ -30,10 +30,13 @@ export class ClientsService {
     if (withDeleted) {
       qb.withDeleted();
     }
-    if (user.role === 'MANAGER') {
+    // EMPLOYEE, same as MANAGER, only ever sees their own department's
+    // clients — never another department's. HR/ADMIN stay org-wide.
+    if (user.role === 'MANAGER' || user.role === 'EMPLOYEE') {
       qb.andWhere('department.id = :departmentId', { departmentId: user.departmentId });
     }
 
+    qb.orderBy('client.createdAt', 'DESC');
     qb.skip((page - 1) * limit).take(limit);
 
     const [data, total] = await qb.getManyAndCount();
@@ -78,13 +81,27 @@ export class ClientsService {
     if (user.role === 'MANAGER' && client.department?.id !== user.departmentId) {
       throw new ForbiddenException('Managers may only update clients within their own department');
     }
+    if (
+      user.role === 'MANAGER' &&
+      dto.departmentId !== undefined &&
+      dto.departmentId !== user.departmentId
+    ) {
+      throw new ForbiddenException('Managers may only move clients within their own department');
+    }
 
-    if (dto.name !== undefined && dto.name !== client.name) {
-      await this.assertNameAvailableInDepartment(dto.name, client.department.id);
+    const nameChanged = dto.name !== undefined && dto.name !== client.name;
+    const departmentChanged = dto.departmentId !== undefined && dto.departmentId !== client.department?.id;
+
+    if (nameChanged || departmentChanged) {
+      await this.assertNameAvailableInDepartment(
+        dto.name ?? client.name,
+        dto.departmentId ?? client.department.id,
+      );
     }
 
     if (dto.name !== undefined) client.name = dto.name;
     if (dto.description !== undefined) client.description = dto.description;
+    if (dto.departmentId !== undefined) client.department = { id: dto.departmentId } as any;
 
     try {
       return await this.clientsRepo.save(client);

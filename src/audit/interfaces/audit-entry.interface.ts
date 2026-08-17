@@ -10,7 +10,7 @@ export interface AuditEntry {
   entityType: AuditEntityType;
   id: number;
   label: string;
-  createdAt: Date | null;
+  createdAt: Date;
   createdBy: AuditActor | null;
   deletedAt: Date;
   deletedBy: AuditActor | null;

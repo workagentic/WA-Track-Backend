@@ -71,16 +71,16 @@ export class TasksController {
   }
 
   @Delete(':id')
-  @Roles('HR', 'ADMIN')
+  @Roles('HR', 'MANAGER', 'ADMIN')
   @ResponseMessage('Task deleted successfully')
   public async softDelete(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: AuthenticatedUser): Promise<void> {
-    await this.tasksService.softDelete(id, user.sub);
+    await this.tasksService.softDelete(id, user);
   }
 
   @Patch(':id/restore')
-  @Roles('HR', 'ADMIN')
+  @Roles('HR', 'MANAGER', 'ADMIN')
   @ResponseMessage('Task restored successfully')
-  public restore(@Param('id', ParseIntPipe) id: number): Promise<Task> {
-    return this.tasksService.restore(id);
+  public restore(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: AuthenticatedUser): Promise<Task> {
+    return this.tasksService.restore(id, user);
   }
 }

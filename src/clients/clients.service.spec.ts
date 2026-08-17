@@ -6,9 +6,27 @@ import { ClientsService } from './clients.service';
 import { Client } from './client.entity';
 import { Task } from '../tasks/task.entity';
 
+function makeQb(rows: any[], total: number) {
+  return {
+    leftJoinAndSelect: jest.fn().mockReturnThis(),
+    withDeleted: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
+    getManyAndCount: jest.fn().mockResolvedValue([rows, total]),
+  };
+}
+
 describe('ClientsService', () => {
   let service: ClientsService;
-  let repo: { create: jest.Mock; save: jest.Mock; findOne: jest.Mock; update: jest.Mock };
+  let repo: {
+    create: jest.Mock;
+    save: jest.Mock;
+    findOne: jest.Mock;
+    update: jest.Mock;
+    createQueryBuilder: jest.Mock;
+  };
   let tasksRepo: { count: jest.Mock; update: jest.Mock };
 
   beforeEach(async () => {
@@ -17,6 +35,7 @@ describe('ClientsService', () => {
       save: jest.fn((x) => Promise.resolve({ id: 1, ...x })),
       findOne: jest.fn(),
       update: jest.fn(),
+      createQueryBuilder: jest.fn(),
     };
     tasksRepo = { count: jest.fn(), update: jest.fn() };
     const module = await Test.createTestingModule({
@@ -42,6 +61,26 @@ describe('ClientsService', () => {
     await expect(
       service.create({ name: 'ABC Company', departmentId: 9 } as any, user),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('scopes findAll to the department for role EMPLOYEE — never other departments', async () => {
+    const qb = makeQb([{ id: 1 }], 1);
+    repo.createQueryBuilder.mockReturnValue(qb);
+    const user = { sub: 1, role: 'EMPLOYEE', departmentId: 5 } as any;
+
+    await service.findAll(user);
+
+    expect(qb.andWhere).toHaveBeenCalledWith('department.id = :departmentId', { departmentId: 5 });
+  });
+
+  it('does not scope findAll for HR/ADMIN — org-wide visibility', async () => {
+    const qb = makeQb([{ id: 1 }, { id: 2 }], 2);
+    repo.createQueryBuilder.mockReturnValue(qb);
+    const user = { sub: 1, role: 'HR', departmentId: 5 } as any;
+
+    await service.findAll(user);
+
+    expect(qb.andWhere).not.toHaveBeenCalled();
   });
 
   it('throws ConflictException when a client with the same name already exists in the department', async () => {
@@ -85,6 +124,38 @@ describe('ClientsService', () => {
     await service.update(7, { name: 'ABC Company' } as any, user);
 
     expect(repo.findOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves a client to a new department when departmentId changes', async () => {
+    repo.findOne
+      .mockResolvedValueOnce({ id: 7, name: 'ABC Company', department: { id: 3 } })
+      .mockResolvedValueOnce(null);
+    const user = { sub: 12, role: 'HR', departmentId: 3 } as any;
+
+    await service.update(7, { departmentId: 9 } as any, user);
+
+    expect(repo.findOne).toHaveBeenNthCalledWith(2, { where: { name: 'ABC Company', department: { id: 9 } } });
+    expect(repo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7, department: { id: 9 } }),
+    );
+  });
+
+  it('blocks a MANAGER from moving a client to a different department', async () => {
+    repo.findOne.mockResolvedValueOnce({ id: 7, name: 'ABC Company', department: { id: 3 } });
+    const user = { sub: 12, role: 'MANAGER', departmentId: 3 } as any;
+
+    await expect(service.update(7, { departmentId: 9 } as any, user)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('throws ConflictException moving a client into a department that already has that name', async () => {
+    repo.findOne
+      .mockResolvedValueOnce({ id: 7, name: 'ABC Company', department: { id: 3 } })
+      .mockResolvedValueOnce({ id: 20, name: 'ABC Company' });
+    const user = { sub: 12, role: 'HR', departmentId: 3 } as any;
+
+    await expect(
+      service.update(7, { departmentId: 9 } as any, user),
+    ).rejects.toThrow(new ConflictException('A client named "ABC Company" already exists in this department'));
   });
 
   it('blocks softDelete when the client has active tasks and force is not set', async () => {

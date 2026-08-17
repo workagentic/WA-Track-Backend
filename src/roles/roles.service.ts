@@ -11,6 +11,7 @@ export class RolesService {
 
   public async findAll(page = 1, limit = 20): Promise<PaginatedResult<Role>> {
     const [data, total] = await this.rolesRepo.findAndCount({
+      order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
     });

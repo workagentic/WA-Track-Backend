@@ -8,6 +8,7 @@ import {
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { Department } from '../departments/department.entity';
 import { Role } from '../roles/role.entity';
@@ -54,9 +55,6 @@ export class Employee {
   @OneToMany(() => Employee, (e) => e.manager)
   managedEmployees!: Employee[];
 
-  @OneToMany(() => Task, (t) => t.assignedTo)
-  assignedTasks!: Task[];
-
   @OneToMany(() => TimeEntry, (te) => te.employee)
   timeEntries!: TimeEntry[];
 
@@ -65,6 +63,9 @@ export class Employee {
 
   @CreateDateColumn()
   createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
 
   @DeleteDateColumn()
   deletedAt!: Date | null;

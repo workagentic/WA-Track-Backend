@@ -32,20 +32,20 @@ export class TasksService {
     const qb = this.tasksRepo
       .createQueryBuilder('task')
       .leftJoinAndSelect('task.department', 'department')
-      .leftJoinAndSelect('task.assignedTo', 'assignedTo')
       .leftJoinAndSelect('task.createdBy', 'createdBy')
       .leftJoinAndSelect('task.client', 'client');
 
-    if (user.role === 'MANAGER') {
+    if (query.withDeleted === 'true') {
+      qb.withDeleted();
+    }
+
+    if (user.role === 'MANAGER' || user.role === 'EMPLOYEE') {
       qb.andWhere('department.id = :departmentId', { departmentId: user.departmentId });
     } else if (query.departmentId) {
       qb.andWhere('department.id = :departmentId', { departmentId: query.departmentId });
     }
 
-    if (user.role === 'EMPLOYEE') {
-      qb.andWhere('assignedTo.id = :employeeId', { employeeId: user.sub });
-    }
-
+    qb.orderBy('task.createdAt', 'DESC');
     qb.skip((page - 1) * limit).take(limit);
 
     const [tasks, total] = await qb.getManyAndCount();
@@ -73,7 +73,7 @@ export class TasksService {
   public async findById(id: number): Promise<Task> {
     const task = await this.tasksRepo.findOne({
       where: { id },
-      relations: { department: true, assignedTo: true, createdBy: true, client: true },
+      relations: { department: true, createdBy: true, client: true },
     });
     if (!task) {
       throw new NotFoundException(`Task ${id} not found`);
@@ -90,7 +90,6 @@ export class TasksService {
       title: dto.title,
       description: dto.description,
       department: { id: dto.departmentId } as any,
-      assignedTo: { id: dto.assignedToId } as any,
       createdBy: { id: user.sub } as any,
       client: { id: dto.clientId } as any,
     });
@@ -108,7 +107,6 @@ export class TasksService {
     if (dto.title !== undefined) task.title = dto.title;
     if (dto.description !== undefined) task.description = dto.description;
     if (dto.departmentId !== undefined) task.department = { id: dto.departmentId } as any;
-    if (dto.assignedToId !== undefined) task.assignedTo = { id: dto.assignedToId } as any;
 
     return this.tasksRepo.save(task);
   }
@@ -135,16 +133,29 @@ export class TasksService {
     return this.tasksRepo.save(task);
   }
 
-  public async softDelete(id: number, actingUserId: number): Promise<void> {
-    await this.findById(id);
-    await this.tasksRepo.update(id, { deletedAt: new Date(), deletedBy: { id: actingUserId } as any });
+  public async softDelete(id: number, user: AuthenticatedUser): Promise<void> {
+    const task = await this.findById(id);
+
+    if (user.role === 'MANAGER' && task.department?.id !== user.departmentId) {
+      throw new ForbiddenException('Managers may only delete tasks within their own department');
+    }
+
+    await this.tasksRepo.update(id, { deletedAt: new Date(), deletedBy: { id: user.sub } as any });
   }
 
-  public async restore(id: number): Promise<Task> {
-    const task = await this.tasksRepo.findOne({ where: { id }, withDeleted: true });
+  public async restore(id: number, user: AuthenticatedUser): Promise<Task> {
+    const task = await this.tasksRepo.findOne({
+      where: { id },
+      withDeleted: true,
+      relations: { department: true },
+    });
     if (!task) {
       throw new NotFoundException(`Task ${id} not found`);
     }
+    if (user.role === 'MANAGER' && task.department?.id !== user.departmentId) {
+      throw new ForbiddenException('Managers may only restore tasks within their own department');
+    }
+
     await this.tasksRepo.update(id, { deletedAt: null, deletedBy: null });
     return this.findById(id);
   }

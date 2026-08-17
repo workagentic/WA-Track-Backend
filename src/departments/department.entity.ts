@@ -1,4 +1,13 @@
-import { Column, DeleteDateColumn, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  DeleteDateColumn,
+  Entity,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import { Employee } from '../employees/employee.entity';
 import { Task } from '../tasks/task.entity';
 
@@ -18,6 +27,12 @@ export class Department {
 
   @OneToMany(() => Task, (t) => t.department)
   tasks: Task[];
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 
   @DeleteDateColumn()
   deletedAt: Date | null;

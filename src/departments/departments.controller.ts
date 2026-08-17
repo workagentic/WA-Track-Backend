@@ -16,12 +16,12 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ResponseMessage } from '../common/decorators/response-message.decorator';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import type { PaginatedResult } from '../common/interfaces/paginated-result.interface';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { DepartmentsService } from './departments.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
+import { QueryDepartmentsDto } from './dto/query-departments.dto';
 import { Department } from './department.entity';
 
 @ApiTags('departments')
@@ -33,8 +33,8 @@ export class DepartmentsController {
 
   @Get()
   @ResponseMessage('Departments fetched successfully')
-  findAll(@Query() query: PaginationQueryDto): Promise<PaginatedResult<Department>> {
-    return this.departmentsService.findAll(query.page, query.limit);
+  findAll(@Query() query: QueryDepartmentsDto): Promise<PaginatedResult<Department>> {
+    return this.departmentsService.findAll(query.page, query.limit, query.withDeleted === 'true');
   }
 
   @Post()

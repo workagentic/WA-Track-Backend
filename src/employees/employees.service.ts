@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -17,7 +17,16 @@ export class EmployeesService {
     private config: ConfigService,
   ) {}
 
-  /** Managers only ever see/act on employees within their own department. */
+  /**
+   * MANAGER only ever sees/acts on employees within their own department —
+   * so its `total` is a correct subordinate headcount. EMPLOYEE is scoped to
+   * only their own record: an employee must never learn the org-wide (or
+   * even department-wide) employee count, and that has to be enforced here,
+   * not just hidden in the UI — the DTO's `total` field is exactly the kind
+   * of "count" this endpoint must not hand an EMPLOYEE. HR/ADMIN are
+   * unrestricted (org-wide), matching every other org-wide-visibility check
+   * in this codebase.
+   */
   public async findAll(user: AuthenticatedUser, page = 1, limit = 20): Promise<PaginatedResult<Employee>> {
     const qb = this.employeesRepo
       .createQueryBuilder('employee')
@@ -27,8 +36,11 @@ export class EmployeesService {
 
     if (user.role === 'MANAGER') {
       qb.where('department.id = :departmentId', { departmentId: user.departmentId });
+    } else if (user.role === 'EMPLOYEE') {
+      qb.where('employee.id = :employeeId', { employeeId: user.sub });
     }
 
+    qb.orderBy('employee.createdAt', 'DESC');
     qb.skip((page - 1) * limit).take(limit);
 
     const [data, total] = await qb.getManyAndCount();
@@ -70,12 +82,8 @@ export class EmployeesService {
     }
   }
 
-  public async update(id: number, dto: UpdateEmployeeDto, user: AuthenticatedUser): Promise<Employee> {
+  public async update(id: number, dto: UpdateEmployeeDto): Promise<Employee> {
     const employee = await this.findById(id);
-
-    if (user.role === 'MANAGER' && employee.department?.id !== user.departmentId) {
-      throw new ForbiddenException('Managers may only update employees within their own department');
-    }
 
     if (dto.email !== undefined && dto.email !== employee.email) {
       await this.assertEmailAndUsernameAvailable(dto.email);

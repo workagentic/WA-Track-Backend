@@ -1,4 +1,4 @@
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { Employee } from '../employees/employee.entity';
 
 export enum RoleName {
@@ -21,4 +21,10 @@ export class Role {
 
   @OneToMany(() => Employee, (e) => e.role)
   employees!: Employee[];
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
 }

@@ -17,9 +17,5 @@ export class CreateTaskDto {
 
   @ApiProperty()
   @IsInt()
-  assignedToId: number;
-
-  @ApiProperty()
-  @IsInt()
   clientId: number;
 }

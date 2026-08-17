@@ -1,4 +1,13 @@
-import { Column, DeleteDateColumn, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  DeleteDateColumn,
+  Entity,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import { Client } from '../clients/client.entity';
 import { Department } from '../departments/department.entity';
 import { Employee } from '../employees/employee.entity';
@@ -18,9 +27,6 @@ export class Task {
   @ManyToOne(() => Department, (d) => d.tasks)
   department!: Department;
 
-  @ManyToOne(() => Employee, (e) => e.assignedTasks)
-  assignedTo!: Employee;
-
   @ManyToOne(() => Employee)
   createdBy!: Employee;
 
@@ -29,6 +35,12 @@ export class Task {
 
   @OneToMany(() => TimeEntry, (te) => te.task)
   timeEntries!: TimeEntry[];
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
 
   @DeleteDateColumn()
   deletedAt!: Date | null;

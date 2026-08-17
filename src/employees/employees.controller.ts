@@ -49,14 +49,10 @@ export class EmployeesController {
   }
 
   @Patch(':id')
-  @Roles('HR', 'ADMIN', 'MANAGER')
+  @Roles('HR', 'ADMIN')
   @ResponseMessage('Employee updated successfully')
-  public update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateEmployeeDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Employee> {
-    return this.employeesService.update(id, dto, user);
+  public update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateEmployeeDto): Promise<Employee> {
+    return this.employeesService.update(id, dto);
   }
 
   @Patch(':id/password')

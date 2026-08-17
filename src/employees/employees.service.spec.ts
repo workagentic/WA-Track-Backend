@@ -6,9 +6,26 @@ import { QueryFailedError } from 'typeorm';
 import { EmployeesService } from './employees.service';
 import { Employee } from './employee.entity';
 
+function makeQb(rows: any[], total: number) {
+  return {
+    leftJoinAndSelect: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
+    getManyAndCount: jest.fn().mockResolvedValue([rows, total]),
+  };
+}
+
 describe('EmployeesService', () => {
   let service: EmployeesService;
-  let repo: { create: jest.Mock; save: jest.Mock; update: jest.Mock; findOne: jest.Mock };
+  let repo: {
+    create: jest.Mock;
+    save: jest.Mock;
+    update: jest.Mock;
+    findOne: jest.Mock;
+    createQueryBuilder: jest.Mock;
+  };
 
   beforeEach(async () => {
     repo = {
@@ -16,6 +33,7 @@ describe('EmployeesService', () => {
       save: jest.fn((x) => Promise.resolve({ id: 1, ...x })),
       update: jest.fn(),
       findOne: jest.fn(),
+      createQueryBuilder: jest.fn(),
     };
     const module = await Test.createTestingModule({
       providers: [
@@ -129,19 +147,50 @@ describe('EmployeesService', () => {
     repo.findOne
       .mockResolvedValueOnce({ id: 5, email: 'old@company.com', department: { id: 1 } })
       .mockResolvedValueOnce({ id: 9, email: 'taken@company.com' });
-    const user = { sub: 1, role: 'HR', departmentId: 1 } as any;
 
     await expect(
-      service.update(5, { email: 'taken@company.com' } as any, user),
+      service.update(5, { email: 'taken@company.com' } as any),
     ).rejects.toThrow(new ConflictException('Email is already registered'));
   });
 
   it('does not check for a duplicate when the email in the update DTO is unchanged', async () => {
     repo.findOne.mockResolvedValueOnce({ id: 5, email: 'same@company.com', department: { id: 1 } });
-    const user = { sub: 1, role: 'HR', departmentId: 1 } as any;
 
-    await service.update(5, { email: 'same@company.com' } as any, user);
+    await service.update(5, { email: 'same@company.com' } as any);
 
     expect(repo.findOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('scopes findAll to only themselves for role EMPLOYEE, never the org-wide count', async () => {
+    const qb = makeQb([{ id: 7 }], 1);
+    repo.createQueryBuilder.mockReturnValue(qb);
+    const user = { sub: 7, role: 'EMPLOYEE', departmentId: 1 } as any;
+
+    const result = await service.findAll(user);
+
+    expect(qb.where).toHaveBeenCalledWith('employee.id = :employeeId', { employeeId: 7 });
+    expect(result.total).toBe(1);
+  });
+
+  it('scopes findAll to the department for role MANAGER', async () => {
+    const qb = makeQb([{ id: 1 }, { id: 2 }, { id: 3 }], 3);
+    repo.createQueryBuilder.mockReturnValue(qb);
+    const user = { sub: 1, role: 'MANAGER', departmentId: 4 } as any;
+
+    const result = await service.findAll(user);
+
+    expect(qb.where).toHaveBeenCalledWith('department.id = :departmentId', { departmentId: 4 });
+    expect(result.total).toBe(3);
+  });
+
+  it('does not scope findAll for HR/ADMIN — org-wide visibility', async () => {
+    const qb = makeQb([{ id: 1 }, { id: 2 }], 2);
+    repo.createQueryBuilder.mockReturnValue(qb);
+    const user = { sub: 1, role: 'HR', departmentId: 1 } as any;
+
+    const result = await service.findAll(user);
+
+    expect(qb.where).not.toHaveBeenCalled();
+    expect(result.total).toBe(2);
   });
 });

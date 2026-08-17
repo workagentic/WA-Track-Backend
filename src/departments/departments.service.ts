@@ -15,10 +15,12 @@ export class DepartmentsService {
     @InjectRepository(Client) private clientsRepo: Repository<Client>,
   ) {}
 
-  async findAll(page = 1, limit = 20): Promise<PaginatedResult<Department>> {
+  async findAll(page = 1, limit = 20, withDeleted = false): Promise<PaginatedResult<Department>> {
     const [data, total] = await this.departmentsRepo.findAndCount({
+      order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
+      withDeleted,
     });
     return buildPaginatedResult(data, total, page, limit);
   }
