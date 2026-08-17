@@ -9,6 +9,7 @@ import { QueryAuditDto } from './dto/query-audit.dto';
 import { AuditActor, AuditEntityType, AuditEntry } from './interfaces/audit-entry.interface';
 import { PaginatedResult } from '../common/interfaces/paginated-result.interface';
 import { buildPaginatedResult } from '../common/utils/paginate.util';
+import { toInclusiveEndOfDay } from '../common/utils/date-range.util';
 
 @Injectable()
 export class AuditService {
@@ -28,7 +29,7 @@ export class AuditService {
     return rows.filter((row) => {
       if (query.deletedById !== undefined && row.deletedBy?.id !== query.deletedById) return false;
       if (query.from && row.deletedAt < new Date(query.from)) return false;
-      if (query.to && row.deletedAt > new Date(query.to)) return false;
+      if (query.to && row.deletedAt > new Date(toInclusiveEndOfDay(query.to))) return false;
       return true;
     });
   }

@@ -7,6 +7,7 @@ import { QueryTimeEntriesDto } from './dto/query-time-entries.dto';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { PaginatedResult } from '../common/interfaces/paginated-result.interface';
 import { buildPaginatedResult } from '../common/utils/paginate.util';
+import { toInclusiveEndOfDay } from '../common/utils/date-range.util';
 
 @Injectable()
 export class TimeEntriesService {
@@ -78,7 +79,7 @@ export class TimeEntriesService {
       qb.andWhere('entry.startTime >= :from', { from: query.from });
     }
     if (query.to) {
-      qb.andWhere('entry.startTime <= :to', { to: query.to });
+      qb.andWhere('entry.startTime <= :to', { to: toInclusiveEndOfDay(query.to) });
     }
 
     qb.orderBy('entry.createdAt', 'DESC')

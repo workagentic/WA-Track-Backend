@@ -9,6 +9,7 @@ import { DECIMAL_REPORT_FORMAT } from './constant/report-format.constant';
 import { enumerateDateKeys } from './utils/report-date.util';
 import { buildPivot } from './utils/report-pivot.util';
 import { writeMetaBlock, writePivotTable } from './utils/report-sheet.util';
+import { toInclusiveEndOfDay } from '../common/utils/date-range.util';
 
 @Injectable()
 export class ReportsService {
@@ -49,7 +50,7 @@ export class ReportsService {
       qb.andWhere('entry.startTime >= :from', { from: query.from });
     }
     if (query.to) {
-      qb.andWhere('entry.startTime <= :to', { to: query.to });
+      qb.andWhere('entry.startTime <= :to', { to: toInclusiveEndOfDay(query.to) });
     }
 
     const entries = await qb.getMany();
