@@ -5,7 +5,6 @@ import { In, Repository } from 'typeorm';
 import { TimeEntry } from '../time-entries/time-entry.entity';
 import { Employee } from '../employees/employee.entity';
 import { ExportReportQueryDto } from './dto/export-report-query.dto';
-import { DECIMAL_REPORT_FORMAT } from './constant/report-format.constant';
 import { enumerateDateKeys } from './utils/report-date.util';
 import { buildPivot } from './utils/report-pivot.util';
 import { writeMetaBlock, writePivotTable } from './utils/report-sheet.util';
@@ -54,7 +53,6 @@ export class ReportsService {
     }
 
     const entries = await qb.getMany();
-    const decimal = query.format === DECIMAL_REPORT_FORMAT;
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'WA Track';
@@ -70,13 +68,15 @@ export class ReportsService {
     const dateKeys = enumerateDateKeys(query.from, query.to, entries);
     const employeeGroups = buildPivot(entries);
 
-    const sheet = workbook.addWorksheet(decimal ? 'Time Report (decimal)' : 'Time Report');
+    // One workbook, two tabs — hours (formatted) and decimal — instead of
+    // two separate downloads. Same underlying entries/pivot for both; only
+    // the cell rendering differs (see writePivotTable's `decimal` flag).
+    const hoursSheet = workbook.addWorksheet('Time Report');
+    const hoursStartRow = writeMetaBlock(hoursSheet, { from: query.from, to: query.to, peopleLabel }) + 2;
+    writePivotTable(hoursSheet, hoursStartRow, dateKeys, employeeGroups, false);
 
-    const tableStartRow = decimal
-      ? 1
-      : writeMetaBlock(sheet, { from: query.from, to: query.to, peopleLabel }) + 2;
-
-    writePivotTable(sheet, tableStartRow, dateKeys, employeeGroups, decimal);
+    const decimalSheet = workbook.addWorksheet('Time Report (Decimal)');
+    writePivotTable(decimalSheet, 1, dateKeys, employeeGroups, true);
 
     return workbook;
   }

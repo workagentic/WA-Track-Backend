@@ -1,8 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsArray, IsDateString, IsIn, IsInt, IsOptional } from 'class-validator';
-import { DEFAULT_REPORT_FORMAT, REPORT_FORMATS } from '../constant/report-format.constant';
-import type { ReportFormat } from '../constant/report-format.constant';
+import { IsArray, IsDateString, IsInt, IsOptional } from 'class-validator';
 
 export class ExportReportQueryDto {
   @ApiPropertyOptional({ example: '2026-07-01' })
@@ -38,9 +36,4 @@ export class ExportReportQueryDto {
   @IsArray()
   @IsInt({ each: true })
   employeeIds?: number[];
-
-  @ApiPropertyOptional({ enum: REPORT_FORMATS, default: DEFAULT_REPORT_FORMAT })
-  @IsOptional()
-  @IsIn(REPORT_FORMATS)
-  format?: ReportFormat;
 }
