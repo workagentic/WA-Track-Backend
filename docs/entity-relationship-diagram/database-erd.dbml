@@ -1,0 +1,152 @@
+// WA Track — full database ERD in DBML (Database Markup Language).
+// Best way to use this file: paste its contents into https://dbdiagram.io
+// (free, no signup required for viewing/editing) — it renders an instant,
+// draggable ERD with proper crow's-foot relationship lines, and you can
+// export to PNG/SVG/PDF or re-generate SQL from it. You can also import
+// DBML into MySQL Workbench, DBeaver, and several draw.io DBML plugins.
+//
+// Reflects the actual current schema (backend/src/**/*.entity.ts +
+// backend/src/database/migrations/*.ts) as of this file's generation —
+// not a target/aspirational design.
+
+Table roles {
+  id integer [pk, increment]
+  name varchar [unique, note: 'EMPLOYEE | MANAGER | HR | ADMIN']
+  permissions "text[]" [null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+
+  Note: 'Fixed set of 4 roles, seeded once. No soft delete.'
+}
+
+Table departments {
+  id integer [pk, increment]
+  name varchar [not null, note: 'unique among non-deleted rows (UQ_departments_name_active)']
+  headEmployeeId integer [null, note: 'soft reference to employees.id — NOT a DB foreign key']
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+  deletedById integer [null]
+}
+
+Table employees {
+  id integer [pk, increment]
+  fullName varchar [not null]
+  email varchar [not null, note: 'unique among non-deleted rows (UQ_employees_email_active)']
+  username varchar [not null, note: 'unique among non-deleted rows (UQ_employees_username_active); immutable after creation']
+  passwordHash varchar [not null, note: 'bcrypt hash; @Exclude()d from every API response']
+  status varchar [not null, default: 'active', note: 'active | locked']
+  departmentId integer [null]
+  roleId integer [not null]
+  manager_id integer [null, note: 'self-referencing FK, ON DELETE SET NULL']
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+  deletedById integer [null, note: 'self-referencing FK, ON DELETE SET NULL']
+}
+
+Table clients {
+  id integer [pk, increment]
+  name varchar [not null]
+  description text [null]
+  departmentId integer [not null]
+  createdById integer [not null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+  deletedById integer [null]
+
+  indexes {
+    (name, departmentId) [unique, name: 'UQ_clients_name_department_active', note: 'partial: WHERE deletedAt IS NULL']
+  }
+}
+
+Table tasks {
+  id integer [pk, increment]
+  title varchar [not null]
+  description text [null]
+  departmentId integer [not null]
+  createdById integer [not null]
+  clientId integer [null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+  deletedById integer [null]
+
+  Note: 'assignedToId (per-employee task assignment) existed historically and was removed — tasks are department/client-scoped only now.'
+}
+
+Table time_entries {
+  id integer [pk, increment]
+  employeeId integer [not null]
+  taskId integer [not null]
+  startTime timestamptz [not null]
+  endTime timestamptz [null]
+  durationSeconds integer [not null, default: 0]
+  syncStatus varchar [not null, default: 'pending', note: 'pending | synced | recovered']
+  lastHeartbeat timestamptz [null]
+  localId varchar [not null, unique, note: 'client-generated id from the desktop app SQLite cache; upsert key for /time-entries/sync']
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+}
+
+Table device_sessions {
+  id integer [pk, increment]
+  employeeId integer [not null]
+  deviceFingerprint varchar [not null]
+  refreshTokenHash varchar [not null]
+  lastActive timestamptz [null]
+  isActive boolean [not null, default: true]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+
+  Note: 'One row per desktop app pairing. isActive=false is how HR/ADMIN revoke a device (checked live on every request in JwtStrategy + on refresh).'
+}
+
+Table pairing_codes {
+  id integer [pk, increment]
+  deviceCode varchar [not null, unique]
+  userCode varchar [not null, unique, note: 'shown to the user, e.g. XXXX-XXXX']
+  employeeId integer [null]
+  status varchar [not null, default: 'pending']
+  expiresAt timestamptz [not null]
+  lastPolledAt timestamptz [null]
+  pollIntervalSeconds integer [not null, default: 5]
+  deviceSessionId integer [null, note: 'soft reference to device_sessions.id — NOT a DB foreign key']
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+
+  Note: 'TV-style device-code pairing flow for the desktop app (like signing into a smart TV app).'
+}
+
+// --- Relationships (all enforced FKs unless noted otherwise) ---
+
+Ref: employees.departmentId > departments.id [delete: set null]
+Ref: employees.roleId > roles.id [delete: restrict]
+Ref: employees.manager_id > employees.id [delete: set null]
+Ref: employees.deletedById > employees.id [delete: set null]
+
+Ref: departments.deletedById > employees.id [delete: set null]
+
+Ref: clients.departmentId > departments.id [delete: restrict]
+Ref: clients.createdById > employees.id [delete: restrict]
+Ref: clients.deletedById > employees.id [delete: set null]
+
+Ref: tasks.departmentId > departments.id [delete: cascade]
+Ref: tasks.createdById > employees.id [delete: restrict]
+Ref: tasks.clientId > clients.id [delete: set null]
+Ref: tasks.deletedById > employees.id [delete: set null]
+
+Ref: time_entries.employeeId > employees.id [delete: cascade]
+Ref: time_entries.taskId > tasks.id [delete: cascade]
+
+Ref: device_sessions.employeeId > employees.id [delete: cascade]
+
+Ref: pairing_codes.employeeId > employees.id [delete: set null]
+
+// Not real DB foreign keys (plain integer columns, application-level only) —
+// included here as relationships for completeness of the picture; delete
+// these two Ref lines if your ERD tool complains about referencing a
+// non-FK column:
+Ref: departments.headEmployeeId > employees.id
+Ref: pairing_codes.deviceSessionId > device_sessions.id

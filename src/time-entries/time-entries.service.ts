@@ -1,9 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import { TimeEntry } from './time-entry.entity';
+import { TimeEntryAudit } from './time-entry-audit.entity';
+import { Employee } from '../employees/employee.entity';
+import { Task } from '../tasks/task.entity';
 import { SyncTimeEntriesDto } from './dto/sync-time-entries.dto';
 import { QueryTimeEntriesDto } from './dto/query-time-entries.dto';
+import { CreateManualTimeEntryDto } from './dto/create-manual-time-entry.dto';
+import { UpdateTimeEntryDto } from './dto/update-time-entry.dto';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { PaginatedResult } from '../common/interfaces/paginated-result.interface';
 import { buildPaginatedResult } from '../common/utils/paginate.util';
@@ -11,7 +17,12 @@ import { toInclusiveEndOfDay } from '../common/utils/date-range.util';
 
 @Injectable()
 export class TimeEntriesService {
-  constructor(@InjectRepository(TimeEntry) private timeEntriesRepo: Repository<TimeEntry>) {}
+  constructor(
+    @InjectRepository(TimeEntry) private timeEntriesRepo: Repository<TimeEntry>,
+    @InjectRepository(TimeEntryAudit) private timeEntryAuditsRepo: Repository<TimeEntryAudit>,
+    @InjectRepository(Employee) private employeesRepo: Repository<Employee>,
+    @InjectRepository(Task) private tasksRepo: Repository<Task>,
+  ) {}
 
   /**
    * Upserts by localId so retried/batched syncs from the desktop app never
@@ -32,6 +43,13 @@ export class TimeEntriesService {
       }
 
       let entry = await this.timeEntriesRepo.findOne({ where: { localId: item.localId } });
+
+      // HR's correction is authoritative once made — a desktop resync of the
+      // same localId (lost response, restored local DB, ...) must not be
+      // allowed to silently revert it. See TIME_ENTRY_AUDIT_MECHANICS.md.
+      if (entry?.manuallyEdited) {
+        continue;
+      }
 
       if (!entry) {
         entry = this.timeEntriesRepo.create({ localId: item.localId });
@@ -59,7 +77,8 @@ export class TimeEntriesService {
       .createQueryBuilder('entry')
       .leftJoinAndSelect('entry.employee', 'employee')
       .leftJoinAndSelect('employee.department', 'department')
-      .leftJoinAndSelect('entry.task', 'task');
+      .leftJoinAndSelect('entry.task', 'task')
+      .leftJoinAndSelect('entry.editedBy', 'editedBy');
 
     if (user.role === 'EMPLOYEE') {
       qb.andWhere('employee.id = :employeeId', { employeeId: user.sub });
@@ -88,5 +107,109 @@ export class TimeEntriesService {
 
     const [data, total] = await qb.getManyAndCount();
     return buildPaginatedResult(data, total, page, limit);
+  }
+
+  private async assertEmployeeExists(id: number): Promise<void> {
+    const found = await this.employeesRepo.findOneBy({ id });
+    if (!found) throw new NotFoundException(`Employee ${id} not found`);
+  }
+
+  private async assertTaskExists(id: number): Promise<void> {
+    const found = await this.tasksRepo.findOneBy({ id });
+    if (!found) throw new NotFoundException(`Task ${id} not found`);
+  }
+
+  private async findByIdOrThrow(id: number): Promise<TimeEntry> {
+    const entry = await this.timeEntriesRepo.findOne({
+      where: { id },
+      relations: { employee: true, task: true },
+    });
+    if (!entry) throw new NotFoundException(`Time entry ${id} not found`);
+    return entry;
+  }
+
+  /** HR/ADMIN-only: create a time entry the employee never tracked themselves. */
+  public async createManual(dto: CreateManualTimeEntryDto, user: AuthenticatedUser): Promise<TimeEntry> {
+    await this.assertEmployeeExists(dto.employeeId);
+    await this.assertTaskExists(dto.taskId);
+
+    const startTime = new Date(`${dto.date}T00:00:00.000Z`);
+    const endTime = new Date(startTime.getTime() + dto.durationSeconds * 1000);
+
+    const entry = this.timeEntriesRepo.create({
+      // Desktop-generated localIds are real UUIDs; this prefix makes an
+      // HR-originated row instantly recognizable in the data and can never
+      // collide with one the desktop app itself generates.
+      localId: `manual-${randomUUID()}`,
+      employee: { id: dto.employeeId } as any,
+      task: { id: dto.taskId } as any,
+      startTime,
+      endTime,
+      durationSeconds: dto.durationSeconds,
+      syncStatus: 'synced',
+      manuallyEdited: true,
+      editedBy: { id: user.sub } as any,
+      editedAt: new Date(),
+    });
+    const saved = await this.timeEntriesRepo.save(entry);
+
+    await this.timeEntryAuditsRepo.save(
+      this.timeEntryAuditsRepo.create({
+        timeEntry: { id: saved.id } as any,
+        editedBy: { id: user.sub } as any,
+        previousDurationSeconds: 0,
+        newDurationSeconds: dto.durationSeconds,
+        reason: dto.reason ?? null,
+      }),
+    );
+
+    return this.findByIdOrThrow(saved.id);
+  }
+
+  /** HR/ADMIN-only: correct an entry that already exists (desktop-tracked or manual). */
+  public async update(id: number, dto: UpdateTimeEntryDto, user: AuthenticatedUser): Promise<TimeEntry> {
+    const entry = await this.findByIdOrThrow(id);
+    const previousDurationSeconds = entry.durationSeconds;
+
+    if (dto.taskId !== undefined) {
+      await this.assertTaskExists(dto.taskId);
+      entry.task = { id: dto.taskId } as any;
+    }
+
+    const newDurationSeconds = dto.durationSeconds ?? entry.durationSeconds;
+    if (dto.date !== undefined || dto.durationSeconds !== undefined) {
+      const dateBasis = dto.date ?? entry.startTime.toISOString().slice(0, 10);
+      const startTime = new Date(`${dateBasis}T00:00:00.000Z`);
+      entry.startTime = startTime;
+      entry.endTime = new Date(startTime.getTime() + newDurationSeconds * 1000);
+    }
+    entry.durationSeconds = newDurationSeconds;
+
+    entry.manuallyEdited = true;
+    entry.editedBy = { id: user.sub } as any;
+    entry.editedAt = new Date();
+
+    const saved = await this.timeEntriesRepo.save(entry);
+
+    await this.timeEntryAuditsRepo.save(
+      this.timeEntryAuditsRepo.create({
+        timeEntry: { id: saved.id } as any,
+        editedBy: { id: user.sub } as any,
+        previousDurationSeconds,
+        newDurationSeconds,
+        reason: dto.reason,
+      }),
+    );
+
+    return this.findByIdOrThrow(saved.id);
+  }
+
+  public async getAuditHistory(timeEntryId: number): Promise<TimeEntryAudit[]> {
+    await this.findByIdOrThrow(timeEntryId);
+    return this.timeEntryAuditsRepo.find({
+      where: { timeEntry: { id: timeEntryId } },
+      relations: { editedBy: true },
+      order: { editedAt: 'DESC' },
+    });
   }
 }

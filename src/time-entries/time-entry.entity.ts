@@ -31,6 +31,18 @@ export class TimeEntry {
   @Column({ unique: true })
   localId!: string;
 
+  // Once true, sync() permanently refuses to let a desktop-app resync of
+  // this localId overwrite it — HR's correction is authoritative from this
+  // point on. See TIME_ENTRY_AUDIT_MECHANICS.md for the full reasoning.
+  @Column({ default: false })
+  manuallyEdited!: boolean;
+
+  @ManyToOne(() => Employee, { nullable: true })
+  editedBy!: Employee | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  editedAt!: Date | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 
