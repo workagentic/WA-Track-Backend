@@ -1,0 +1,106 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="WA Track ERD" id="wa-track-erd">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="t_roles" value="&lt;b&gt;roles&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;🔑 id : int&lt;br&gt;name : varchar (unique)&lt;br&gt;permissions : text[] (nullable)&lt;br&gt;createdAt : timestamptz&lt;br&gt;updatedAt : timestamptz" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=8;fontSize=12;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="260" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t_departments" value="&lt;b&gt;departments&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;🔑 id : int&lt;br&gt;name : varchar (unique, active)&lt;br&gt;headEmployeeId : int (nullable, soft ref)&lt;br&gt;createdAt : timestamptz&lt;br&gt;updatedAt : timestamptz&lt;br&gt;deletedAt : timestamptz (nullable)&lt;br&gt;deletedById : int → employees.id (nullable)" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=8;fontSize=12;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="360" y="40" width="260" height="180" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t_employees" value="&lt;b&gt;employees&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;🔑 id : int&lt;br&gt;fullName : varchar&lt;br&gt;email : varchar (unique, active)&lt;br&gt;username : varchar (unique, active, immutable)&lt;br&gt;passwordHash : varchar (hidden from API)&lt;br&gt;status : varchar (active/locked)&lt;br&gt;departmentId : int → departments.id (nullable)&lt;br&gt;roleId : int → roles.id&lt;br&gt;manager_id : int → employees.id (nullable, self)&lt;br&gt;createdAt : timestamptz&lt;br&gt;updatedAt : timestamptz&lt;br&gt;deletedAt : timestamptz (nullable)&lt;br&gt;deletedById : int → employees.id (nullable, self)" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=8;fontSize=12;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="680" y="40" width="300" height="300" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t_clients" value="&lt;b&gt;clients&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;🔑 id : int&lt;br&gt;name : varchar&lt;br&gt;description : text (nullable)&lt;br&gt;departmentId : int → departments.id&lt;br&gt;createdById : int → employees.id&lt;br&gt;createdAt : timestamptz&lt;br&gt;updatedAt : timestamptz&lt;br&gt;deletedAt : timestamptz (nullable)&lt;br&gt;deletedById : int → employees.id (nullable)&lt;br&gt;🔑 UQ (name, departmentId) active" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=8;fontSize=12;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="400" width="260" height="220" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t_tasks" value="&lt;b&gt;tasks&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;🔑 id : int&lt;br&gt;title : varchar&lt;br&gt;description : text (nullable)&lt;br&gt;departmentId : int → departments.id&lt;br&gt;createdById : int → employees.id&lt;br&gt;clientId : int → clients.id (nullable)&lt;br&gt;createdAt : timestamptz&lt;br&gt;updatedAt : timestamptz&lt;br&gt;deletedAt : timestamptz (nullable)&lt;br&gt;deletedById : int → employees.id (nullable)" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=8;fontSize=12;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="360" y="400" width="260" height="240" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t_time_entries" value="&lt;b&gt;time_entries&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;🔑 id : int&lt;br&gt;employeeId : int → employees.id&lt;br&gt;taskId : int → tasks.id&lt;br&gt;startTime : timestamptz&lt;br&gt;endTime : timestamptz (nullable)&lt;br&gt;durationSeconds : int (default 0)&lt;br&gt;syncStatus : varchar (pending/synced/recovered)&lt;br&gt;lastHeartbeat : timestamptz (nullable)&lt;br&gt;localId : varchar (unique)&lt;br&gt;createdAt : timestamptz&lt;br&gt;updatedAt : timestamptz" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=8;fontSize=12;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="680" y="400" width="300" height="250" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t_device_sessions" value="&lt;b&gt;device_sessions&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;🔑 id : int&lt;br&gt;employeeId : int → employees.id&lt;br&gt;deviceFingerprint : varchar&lt;br&gt;refreshTokenHash : varchar&lt;br&gt;lastActive : timestamptz (nullable)&lt;br&gt;isActive : boolean (default true)&lt;br&gt;createdAt : timestamptz&lt;br&gt;updatedAt : timestamptz" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=8;fontSize=12;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="40" y="700" width="260" height="200" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t_pairing_codes" value="&lt;b&gt;pairing_codes&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;🔑 id : int&lt;br&gt;deviceCode : varchar (unique)&lt;br&gt;userCode : varchar (unique)&lt;br&gt;employeeId : int → employees.id (nullable)&lt;br&gt;status : varchar&lt;br&gt;expiresAt : timestamptz&lt;br&gt;lastPolledAt : timestamptz (nullable)&lt;br&gt;pollIntervalSeconds : int (default 5)&lt;br&gt;deviceSessionId : int (nullable, soft ref)&lt;br&gt;createdAt : timestamptz&lt;br&gt;updatedAt : timestamptz" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=8;fontSize=12;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="360" y="700" width="260" height="250" as="geometry" />
+        </mxCell>
+
+        <!-- Relationships: crow's-foot many (start) -> one (end); dashed = soft reference, not a real DB FK -->
+
+        <mxCell id="e1" value="departmentId" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_employees" target="t_departments">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="roleId" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_employees" target="t_roles">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="manager_id (self)" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;exitX=1;exitY=0.2;entryX=1;entryY=0.4;" edge="1" parent="1" source="t_employees" target="t_employees">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="deletedById (self)" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;exitX=1;exitY=0.6;entryX=1;entryY=0.8;" edge="1" parent="1" source="t_employees" target="t_employees">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e5" value="deletedById" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_departments" target="t_employees">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="headEmployeeId (not enforced)" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;dashed=1;startArrow=none;endArrow=none;" edge="1" parent="1" source="t_departments" target="t_employees">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e7" value="departmentId" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_clients" target="t_departments">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="createdById" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_clients" target="t_employees">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="deletedById" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_clients" target="t_employees">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e10" value="departmentId" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_tasks" target="t_departments">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="createdById" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_tasks" target="t_employees">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" value="clientId" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_tasks" target="t_clients">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" value="deletedById" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_tasks" target="t_employees">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e14" value="employeeId" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_time_entries" target="t_employees">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" value="taskId" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_time_entries" target="t_tasks">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e16" value="employeeId" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_device_sessions" target="t_employees">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e17" value="employeeId" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;startArrow=ERmany;startFill=0;endArrow=ERone;endFill=0;" edge="1" parent="1" source="t_pairing_codes" target="t_employees">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" value="deviceSessionId (not enforced)" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;fontSize=10;dashed=1;startArrow=none;endArrow=none;" edge="1" parent="1" source="t_pairing_codes" target="t_device_sessions">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
